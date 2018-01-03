@@ -10,9 +10,6 @@ namespace CsharpIOCP
 {
     class IOCP
     {
-        const string IP = "127.0.0.1";
-        const int portNo = 500;
-        const int iClientMaxCount = 1000; ;//最大客户端数量
         /// <summary>
         /// Socket-Server
         /// </summary>
@@ -26,19 +23,19 @@ namespace CsharpIOCP
         /// <summary>
         /// 侦听客户端
         /// </summary>
-        public void ListenClient()
+        public void ListenClient(string IP, int portNo, int maxClient)
         {
             try
             {
                 IPAddress ipAddress = IPAddress.Parse(IP);
                 s_Server = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
                 s_Server.Bind(new IPEndPoint(ipAddress, portNo));
-                s_Server.Listen(iClientMaxCount);
-                s_Server.Accept();
+                s_Server.Listen(maxClient);
+
                 int ibufferSize = 1024; //每个缓冲区大小
-                BufferManager bufferManager = new BufferManager(ibufferSize * iClientMaxCount, ibufferSize);
-                saeaPool_Receive = new SAEAPool(iClientMaxCount);
-                for (int i = 0; i < iClientMaxCount; i++) //填充SocketAsyncEventArgs池
+                BufferManager bufferManager = new BufferManager(ibufferSize * maxClient, ibufferSize);
+                saeaPool_Receive = new SAEAPool(maxClient);
+                for (int i = 0; i < maxClient; i++) //填充SocketAsyncEventArgs池
                 {
                     SocketAsyncEventArgs saea_New = new SocketAsyncEventArgs();
                     saea_New.Completed += new EventHandler<SocketAsyncEventArgs>(OnIOCompleted);
@@ -49,6 +46,7 @@ namespace CsharpIOCP
                     userToken.SAEA_Send = saea_Send;
                     userToken.HeartbeatTime = DateTime.Now;
                     saea_New.UserToken = userToken;
+                    userToken.SAEA_Send.UserToken = userToken;
                     saeaPool_Receive.Add(saea_New);
                 }
 
@@ -57,8 +55,12 @@ namespace CsharpIOCP
                 tCheckClientHeartbeat.Start();
 
                 StartAccept(null);
+                Console.WriteLine("初始化服务器。");
             }
-            catch { }
+            catch (Exception error)
+            {
+                Console.WriteLine(error.Message);
+            }
         }
 
         /// <summary>
@@ -69,7 +71,7 @@ namespace CsharpIOCP
             if (saea_Accept == null)
             {
                 saea_Accept = new SocketAsyncEventArgs();
-                saea_Accept.Completed += new EventHandler<SocketAsyncEventArgs>(OnAcceptCompleted);
+                saea_Accept.Completed += new EventHandler<SocketAsyncEventArgs>(OnIOCompleted);
             }
             else
                 saea_Accept.AcceptSocket = null;  //重用前进行对象清理
@@ -79,20 +81,15 @@ namespace CsharpIOCP
         }
 
         /// <summary>
-        /// 连接完成异步操作回调
-        /// </summary>
-        private void OnAcceptCompleted(object sender, SocketAsyncEventArgs e)
-        {
-            ProcessAccept(e);
-        }
-
-        /// <summary>
         /// 接收或发送完成异步操作回调
         /// </summary>
         private void OnIOCompleted(object sender, SocketAsyncEventArgs e)
         {
             switch (e.LastOperation)
             {
+                case SocketAsyncOperation.Accept:
+                    ProcessAccept(e);
+                    break;
                 case SocketAsyncOperation.Receive:
                     ProcessReceive(e);
                     break;
@@ -118,9 +115,9 @@ namespace CsharpIOCP
                     SocketAsyncEventArgs saea_Receive = saeaPool_Receive.Pull();
                     if (saea_Receive != null)
                     {
-                        Console.WriteLine("Online Client total：" + saeaPool_Receive.GetUsedSAEACount());
                         SAEAUserToken userToken = (SAEAUserToken)saea_Receive.UserToken;
                         userToken.S = s;
+                        Console.WriteLine("Online Client total：" + saeaPool_Receive.GetUsedSAEACount() + ":" + userToken.HeartbeatTime + "/" + DateTime.Now);
 
                         if (!userToken.S.ReceiveAsync(saea_Receive))
                             ProcessReceive(saea_Receive);
@@ -152,9 +149,14 @@ namespace CsharpIOCP
                     {
                         byte[] abFactReceive = new byte[e.BytesTransferred];
                         Array.Copy(e.Buffer, e.Offset, abFactReceive, 0, e.BytesTransferred);
-                        //Console.WriteLine("From the " + sClientIP + " to receive " + e.BytesTransferred + " bytes of data：" + BitConverter.ToString(abFactReceive));
+                        Console.WriteLine("From the " + sClientIP + " to receive " + e.BytesTransferred + " bytes of data：" + BitConverter.ToString(abFactReceive));
+
+                        Send(userToken.SAEA_Send, abFactReceive);
                     }
-                    catch { }
+                    catch (Exception error)
+                    {
+                        Console.WriteLine(error.Message);
+                    }
                     finally
                     {
                         if (!userToken.S.ReceiveAsync(e))
@@ -167,12 +169,34 @@ namespace CsharpIOCP
             catch { }
         }
 
+        public void Send(SocketAsyncEventArgs e, byte[] data)
+        {
+            SAEAUserToken userToken = (SAEAUserToken)e.UserToken;
+            userToken.SAEA_Send.SetBuffer(data, 0, data.Length);
+            //autoSendReceiveEvents[SendOperation].WaitOne();
+            if (!userToken.S.SendAsync(e))//投递发送请求，这个函数有可能同步发送出去，这时返回false，并且不会引发SocketAsyncEventArgs.Completed事件  
+            {
+                // 同步发送时处理发送完成事件  
+                ProcessSend(e);
+            }
+        }
+
         /// <summary>
         /// 异步发送操作完成后调用该方法
         /// </summary>
         private void ProcessSend(SocketAsyncEventArgs e)
         {
-
+            //TODO  
+            if (e.SocketError == SocketError.Success)
+            {
+                SAEAUserToken userToken = (SAEAUserToken)e.UserToken;
+                Console.WriteLine("发送成功:" + userToken.HeartbeatTime.ToString());
+                //TODO
+            }
+            else
+            {
+                Console.WriteLine("发送回调：" + e.SocketError);
+            }
         }
 
         /// <summary>
