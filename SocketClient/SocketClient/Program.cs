@@ -39,17 +39,17 @@ namespace SocketClient
         //}
         static void Main(string[] args)
         {
-            IPEndPoint hostEndPoint = new IPEndPoint(IPAddress.Parse(IP), portNo);
-            IOCPClient client = new IOCPClient(hostEndPoint, hostEndPoint);
-            client.Connect();
-            Console.WriteLine("服务器连接成功!");
-            Console.Write("send>");
-            string msg = Console.ReadLine();
-            if (!string.IsNullOrEmpty(msg))
+            IOCPClient client = new IOCPClient(IP, portNo);
+
+            while (true)
             {
-                client.Send(Encoding.Default.GetBytes(msg));
+                Console.Write("send>");
+                string msg = Console.ReadLine();
+                if (!string.IsNullOrEmpty(msg))
+                {
+                    client.Send(Encoding.Default.GetBytes(msg));
+                }
             }
-            Console.ReadLine();
         }
     }
 }

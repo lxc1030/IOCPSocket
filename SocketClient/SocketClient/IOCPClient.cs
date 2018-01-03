@@ -37,13 +37,17 @@ namespace SocketClient
         /// <summary>  
         /// 服务器监听端点  
         /// </summary>  
-        private IPEndPoint _remoteEndPoint;
+        private IPEndPoint hostEndPoint;
 
-        public IOCPClient(IPEndPoint local, IPEndPoint remote)
+
+        public IOCPClient(string IP, int portNo)
         {
-            _clientSock = new Socket(local.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-            _remoteEndPoint = remote;
+            hostEndPoint = new IPEndPoint(IPAddress.Parse(IP), portNo);
+            _clientSock = new Socket(hostEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+
+            Connect();
         }
+
 
         #region 连接服务器  
 
@@ -53,16 +57,19 @@ namespace SocketClient
         public void Connect()
         {
             SocketAsyncEventArgs connectArgs = new SocketAsyncEventArgs();
-     
+
             connectArgs.UserToken = _clientSock;
-            connectArgs.RemoteEndPoint = _remoteEndPoint;
+            connectArgs.RemoteEndPoint = hostEndPoint;
             connectArgs.Completed += new EventHandler<SocketAsyncEventArgs>(OnConnected);
             //mutex.WaitOne();
             if (!_clientSock.ConnectAsync(connectArgs))//异步连接  
             {
                 ProcessConnected(connectArgs);
             }
-
+            if (connectArgs.SocketError == SocketError.Success)
+            {
+                Log4Debug("链接成功。");
+            }
         }
         /// <summary>  
         /// 连接上的事件  
@@ -92,7 +99,7 @@ namespace SocketClient
                         SocketAsyncEventArgs asyniar = new SocketAsyncEventArgs();
                         asyniar.UserToken = s;
                         asyniar.AcceptSocket = s;
-                        
+
                         if (!s.ReceiveAsync(asyniar))//投递接收请求
                         {
                             ProcessReceive(asyniar);
@@ -119,7 +126,7 @@ namespace SocketClient
             asyniar.Completed += new EventHandler<SocketAsyncEventArgs>(OnSendComplete);
             asyniar.SetBuffer(data, 0, data.Length);
             asyniar.UserToken = _clientSock;
-            asyniar.RemoteEndPoint = _remoteEndPoint;
+            asyniar.RemoteEndPoint = hostEndPoint;
             //autoSendReceiveEvents[SendOperation].WaitOne();
             if (!_clientSock.SendAsync(asyniar))//投递发送请求，这个函数有可能同步发送出去，这时返回false，并且不会引发SocketAsyncEventArgs.Completed事件  
             {
@@ -147,6 +154,13 @@ namespace SocketClient
         private void ProcessSend(SocketAsyncEventArgs e)
         {
             //TODO  
+            if (e.SocketError == SocketError.Success)
+            {
+                Socket s = (Socket)e.UserToken;
+                Log4Debug("发送成功。");
+                //TODO
+            }
+
         }
         #endregion
 
