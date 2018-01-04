@@ -3,13 +3,15 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace SocketClient
 {
     class Program
     {
-        public const string IP = "192.168.0.110";
+        public const string IP = "192.168.1.110";
+        //public const string IP = "192.168.0.110";
         public const int portNo = 500;
 
         //static void Main(string[] args)
@@ -45,11 +47,31 @@ namespace SocketClient
             {
                 Console.Write("send>");
                 string msg = Console.ReadLine();
+
                 if (!string.IsNullOrEmpty(msg))
                 {
-                    client.Send(Encoding.Default.GetBytes(msg));
+                    if (msg == "test")
+                    {
+                        client.TestThread();
+                        for (int i = 0; i < 100; i++)
+                        {
+                            byte[] b = new byte[1020];
+                            b[0] = (byte)i;
+                            client.SendSave(b);
+                        }
+                    }
+                    else if (msg == "debug")
+                    {
+                        client.DebugReceive();
+                    }
+                    else
+                    {
+                        client.SendSave(Encoding.Default.GetBytes(msg));
+                    }
                 }
             }
         }
+        
+
     }
 }

@@ -43,10 +43,11 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Client.cs" />
-    <Compile Include="IOCPClient.cs" />
-    <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Client.cs" />
+    <Compile Include="Scripts\IOCPClient.cs" />
+    <Compile Include="Scripts\Program.cs" />
+    <Compile Include="Scripts\AsyncUserToken.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
