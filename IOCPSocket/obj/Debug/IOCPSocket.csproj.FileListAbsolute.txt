@@ -1,7 +1,0 @@
-E:\GitSave\IOCP\IOCPSocket\IOCPSocket\bin\Debug\IOCPSocket.exe.config
-E:\GitSave\IOCPSocket\IOCPSocket\bin\Debug\IOCPSocket.exe.config
-E:\GitSave\IOCPSocket\IOCPSocket\obj\Debug\IOCPSocket.csprojResolveAssemblyReference.cache
-E:\GitSave\IOCPSocket\IOCPSocket\bin\Debug\IOCPSocket.exe
-E:\GitSave\IOCPSocket\IOCPSocket\bin\Debug\IOCPSocket.pdb
-E:\GitSave\IOCPSocket\IOCPSocket\obj\Debug\IOCPSocket.exe
-E:\GitSave\IOCPSocket\IOCPSocket\obj\Debug\IOCPSocket.pdb
