@@ -14,6 +14,7 @@ namespace CsharpIOCP
 
         static void Main(string[] args)
         {
+            LogManager.Init();//清除Log文件夹
             AsyncIOCPServer iocp = new AsyncIOCPServer(IP, portNo, iClientMaxCount);
             Console.ReadLine();
         }

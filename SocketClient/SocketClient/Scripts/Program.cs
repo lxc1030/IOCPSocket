@@ -53,11 +53,14 @@ namespace SocketClient
                     if (msg == "test")
                     {
                         client.TestThread();
-                        for (int i = 0; i < 100; i++)
+                        for (int t = 0; t < 100; t++)
                         {
-                            byte[] b = new byte[1020];
-                            b[0] = (byte)i;
-                            client.SendSave(b);
+                            for (int i = 1; i < 255; i++)
+                            {
+                                byte[] b = new byte[1024];
+                                b[0] = (byte)i;
+                                client.SendSave(b);
+                            }
                         }
                     }
                     else if (msg == "debug")

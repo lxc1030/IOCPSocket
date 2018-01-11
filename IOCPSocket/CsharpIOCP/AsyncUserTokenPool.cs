@@ -62,18 +62,18 @@ namespace CsharpIOCP
 
         public void CheckIsConnected(int iCheckInterval, Action<AsyncUserToken> closeAction)
         {
-            lock (used)
-            {
-                for (int i = used.Count - 1; i >= 0; i--)
-                {
-                    if (used[i].userInfo.heartbeatTime.AddMilliseconds(iCheckInterval).CompareTo(DateTime.Now) < 0)
-                    {
-                        Console.WriteLine(used[i].userInfo.Rigiter + " the heartbeat timeout ！");
-                        //
-                        closeAction(used[i]);
-                    }
-                }
-            }
+            //lock (used)
+            //{
+            //    for (int i = used.Count - 1; i >= 0; i--)
+            //    {
+            //        if (used[i].userInfo.heartbeatTime.AddMilliseconds(iCheckInterval).CompareTo(DateTime.Now) < 0)
+            //        {
+            //            Console.WriteLine(used[i].userInfo.Rigiter + " the heartbeat timeout ！");
+            //            //
+            //            closeAction(used[i]);
+            //        }
+            //    }
+            //}
         }
 
         public AsyncUserToken GetTokenByMemberID(string memberID)
@@ -81,18 +81,18 @@ namespace CsharpIOCP
             lock (used)
             {
                 AsyncUserToken userToken = null;
-                for (int i = 0; i < used.Count; i++)
-                {
-                    if (used[i].userInfo.Register == null)
-                    {
-                        continue;
-                    }
-                    if (used[i].userInfo.Register.userID == memberID)
-                    {
-                        userToken = used[i];
-                        break;
-                    }
-                }
+                //for (int i = 0; i < used.Count; i++)
+                //{
+                //    if (used[i].userInfo.Register == null)
+                //    {
+                //        continue;
+                //    }
+                //    if (used[i].userInfo.Register.userID == memberID)
+                //    {
+                //        userToken = used[i];
+                //        break;
+                //    }
+                //}
                 return userToken;
             }
         }

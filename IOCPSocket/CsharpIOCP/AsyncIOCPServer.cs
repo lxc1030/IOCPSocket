@@ -15,11 +15,16 @@ namespace CsharpIOCP
         /// Socket-Server
         /// </summary>
         Socket s_Server;
+        // Listener endpoint.  
+        private IPEndPoint hostEndPoint;
 
         /// <summary>
         /// 对象池
         /// </summary>
         AsyncUserTokenPool userTokenPool;
+
+        //发送与接收的MySocketEventArgs变量定义.  
+        private List<MySocketEventArgs> listArgs = new List<MySocketEventArgs>();
 
         /// <summary>
         /// 每个Socket套接字缓冲区大小
@@ -29,6 +34,7 @@ namespace CsharpIOCP
         /// 心跳检测间隔秒数
         /// </summary>
         int HeartbeatSecondTime = 60;
+
 
         /// <summary>
         /// 侦听客户端
@@ -40,7 +46,8 @@ namespace CsharpIOCP
             {
                 IPAddress ipAddress = IPAddress.Parse(IP);
                 s_Server = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-                s_Server.Bind(new IPEndPoint(ipAddress, portNo));
+                hostEndPoint = new IPEndPoint(ipAddress, portNo);
+                s_Server.Bind(hostEndPoint);
                 s_Server.Listen(maxClient);
 
                 userTokenPool = new AsyncUserTokenPool(maxClient);
@@ -50,9 +57,6 @@ namespace CsharpIOCP
 
                     userToken.SAEA_Receive.Completed += new EventHandler<SocketAsyncEventArgs>(OnIOCompleted);
                     userToken.SAEA_Receive.UserToken = userToken;
-                    userToken.SAEA_Send.Completed += new EventHandler<SocketAsyncEventArgs>(OnIOCompleted);
-                    userToken.SAEA_Send.UserToken = userToken;
-
                     userTokenPool.Push(userToken);
                 }
 
@@ -68,6 +72,30 @@ namespace CsharpIOCP
                 Log4Debug(error.Message);
             }
         }
+
+        int tagCount = 0;
+        /// <summary>  
+        /// 初始化发送参数MySocketEventArgs  
+        /// </summary>  
+        /// <returns></returns>  
+        MySocketEventArgs initSendArgs()
+        {
+            MySocketEventArgs sendArg = new MySocketEventArgs();
+            sendArg.Completed += new EventHandler<SocketAsyncEventArgs>(OnIOCompleted);
+            sendArg.UserToken = s_Server;
+            sendArg.RemoteEndPoint = hostEndPoint;
+            sendArg.IsUsing = false;
+            Interlocked.Increment(ref tagCount);
+            sendArg.ArgsTag = tagCount;
+            lock (listArgs)
+            {
+                listArgs.Add(sendArg);
+            }
+            return sendArg;
+        }
+
+
+
 
         /// <summary>
         /// 接受来自客户机的连接请求操作
@@ -102,8 +130,8 @@ namespace CsharpIOCP
                     ProcessReceive(userToken);
                     break;
                 case SocketAsyncOperation.Send:
-                    userToken = (AsyncUserToken)e.UserToken;
-                    ProcessSend(userToken);
+                    //userToken = (AsyncUserToken)e.UserToken;
+                    ProcessSend((MySocketEventArgs)e);
                     break;
             }
         }
@@ -125,7 +153,7 @@ namespace CsharpIOCP
                     if (userToken != null)
                     {
                         userToken.ConnectSocket = s;
-                        userToken.HeartbeatTime = DateTime.Now;
+                        //userToken.HeartbeatTime = DateTime.Now;
                         Log4Debug("Free Client total：" + userTokenPool.Count());
                         SocketAsyncEventArgs e = userToken.SAEA_Receive;
                         if (!userToken.ConnectSocket.ReceiveAsync(e))
@@ -204,172 +232,193 @@ namespace CsharpIOCP
         //    }
         //    catch { }
         //}
+        #region Receive
         private void ProcessReceive(AsyncUserToken userToken)
         {
             SocketAsyncEventArgs e = userToken.SAEA_Receive;
-            try
+
+            if (e.BytesTransferred > 0 && e.SocketError == SocketError.Success)
             {
-                if (e.BytesTransferred > 0 && e.SocketError == SocketError.Success)
+                //if (userToken.userInfo != null)
+                //{
+                //    userToken.userInfo.heartbeatTime = DateTime.Now;
+                //}
+                string sClientIP = ((IPEndPoint)userToken.ConnectSocket.RemoteEndPoint).Address.ToString();
+                //try
                 {
-                    userToken.HeartbeatTime = DateTime.Now;
-                    string sClientIP = ((IPEndPoint)userToken.ConnectSocket.RemoteEndPoint).Address.ToString();
-                    try
+                    byte[] copy = new byte[e.BytesTransferred];
+                    Array.Copy(e.Buffer, e.Offset, copy, 0, e.BytesTransferred);
+                    string debug = "Receve " + copy.Length + " :";
+                    for (int i = 0; i < copy.Length; i++)
                     {
-                        byte[] abFactReceive = new byte[e.BytesTransferred];
-                        Array.Copy(e.Buffer, e.Offset, abFactReceive, 0, e.BytesTransferred);
-
-                        string info = "";
-                        for (int i = 0; i < abFactReceive.Length; i++)
-                        {
-                            info += abFactReceive[i] + ",";
-                        }
-                        Log4Debug("From the " + sClientIP + " to receive " + e.BytesTransferred + " bytes of data：" + info);
-
-                        lock (userToken.ReceiveBuffer)
-                        {
-                            for (int i = 0; i < abFactReceive.Length; i++)
-                            {
-                                userToken.ReceiveBuffer.Enqueue(abFactReceive[i]);
-                            }
-                        }
-
-                        byte[] data = abFactReceive;
-                        lock (userToken.SendBuffer)
-                        {
-                            Log4Debug("保存数据:" + data[0]);
-                            for (int i = 0; i < data.Length; i++)
-                            {
-                                userToken.SendBuffer.Enqueue(data[i]);
-                            }
-                        }
-                        Send(userToken);
+                        debug += copy[i] + ",";
                     }
-                    catch (Exception error)
-                    {
-                        Log4Debug(error.Message);
-                    }
-                    finally
-                    {
-                        if (!userToken.ConnectSocket.ReceiveAsync(e))
-                            ProcessReceive(userToken);
-                    }
+                    Log4Debug(debug);
+                    //
+                    //lock (userToken.ReceiveBuffer)
+                    //{
+                    //    userToken.ReceiveBuffer.AddRange(copy);
+                    //}
+                    if (!userToken.ConnectSocket.ReceiveAsync(e))
+                        ProcessReceive(userToken);
+
+                    //if (!userToken.isDealReceive)
+                    //{
+                    //    userToken.isDealReceive = true;
+                    //    Handle(userToken);
+                    //}
                 }
-                else
+                //catch (Exception error)
+                //{
+                //    Log4Debug(error.Message);
+                //}
+            }
+            else
+            {
+                CloseClientSocket(userToken);
+            }
+        }
+        private void Handle(AsyncUserToken userToken)
+        {
+            while (userToken.ReceiveBuffer.Count > 0)
+            {
+                byte[] rece = null;
+                lock (userToken.ReceiveBuffer)
                 {
-                    CloseClientSocket(userToken);
+                    rece = userToken.ReceiveBuffer.ToArray();
+                    userToken.ReceiveBuffer.Clear();
+                }
+                userToken.DealBuffer.AddRange(rece);
+                //
+                while (userToken.DealBuffer.Count > 0)
+                {
+                    if (userToken.DealBuffer.Count < sizeof(int))
+                    {
+                        break;
+                    }
+                    byte[] buffer = null;
+
+                    byte[] lengthB = new byte[sizeof(int)];
+                    lengthB = userToken.DealBuffer.Take(sizeof(int)).ToArray();
+                    int length = BitConverter.ToInt32(lengthB, 0);
+                    if (userToken.DealBuffer.Count < length + sizeof(int))
+                    {
+                        //Log4Debug("还未收齐，继续接收");
+                        break;
+                    }
+                    else
+                    {
+                        userToken.DealBuffer.RemoveRange(0, sizeof(int));
+                        buffer = userToken.DealBuffer.Take(length).ToArray();
+                        userToken.DealBuffer.RemoveRange(0, length);
+                    }
+
+                    string debug = "Receve:";
+                    for (int i = 0; i < buffer.Length; i++)
+                    {
+                        debug += buffer[i] + ",";
+                    }
+                    Console.WriteLine(debug);
+
+                    DealReceive(null, userToken);
+                    //while (buffer.Length > 0)
+                    //{
+                    //    MessageXieYi xieyi = MessageXieYi.FromBytes(buffer);
+                    //    if (xieyi != null)
+                    //    {
+                    //        int messageLength = xieyi.MessageContentLength + MessageXieYi.XieYiLength + 1 + 1;
+                    //        buffer = buffer.Skip(messageLength).ToArray();
+                    //        DealReceive(xieyi, userToken);
+                    //    }
+                    //    else
+                    //    {
+                    //        string info = "数据应该直接处理完，不会到这:";
+                    //        for (int i = 0; i < buffer.Length; i++)
+                    //        {
+                    //            info += buffer[i] + ",";
+                    //        }
+                    //        Log4Debug(info);
+                    //        break;
+                    //    }
+                    //}
                 }
             }
-            catch { }
+            userToken.isDealReceive = false;
         }
+        #endregion
 
         private void DealReceive(MessageXieYi xieyi, AsyncUserToken userToken)
         {
-            byte[] backInfo = ServerDataManager.instance.SelectMessage(xieyi, userToken); //判断逻辑
-            if (backInfo != null)//用户需要服务器返回值的话
-            {
-                //存储要发送的消息并判断是否发送
-                AsyncIOCPServer.instance.SaveSendMessage(userToken, backInfo);
-            }
-        }
-
-
-
-
-
-
-
-
-
-        public void SaveSendMessage(AsyncUserToken userToken, byte[] data)
-        {
-            //string INFO = "保存待发送:";
-            //for (int i = 0; i < data.Length; i++)
+            //byte[] backInfo = ServerDataManager.instance.SelectMessage(xieyi, userToken); //判断逻辑
+            //if (backInfo != null)//用户需要服务器返回值的话
             //{
-            //    INFO += "_" + data[i];
+            //    //存储要发送的消息并判断是否发送
+            //    AsyncIOCPServer.instance.SaveSendMessage(userToken, backInfo);
             //}
-            //Log4Debug(INFO);
-
-            lock (userToken.SendBuffer)
-            {
-                //存值
-                for (int i = 0; i < data.Length; i++)
-                {
-                    //将buffer保存到队列
-                    userToken.SendBuffer.Enqueue(data[i]);
-                }
-            }
-            if (!userToken.isSending)
-            {
-                userToken.isSending = true;
-                Send(userToken);
-            }
-
+            SendSave(userToken, new byte[] { 1 });
         }
 
 
 
-        public void Send(AsyncUserToken userToken)
+
+        public void SendSave(AsyncUserToken userToken, byte[] data)
         {
-            if (userToken.isSending)
-            {
-                Log4Debug("正在发送。");
-                return;
-            }
-
-            userToken.isSending = true;
-
-            byte[] buffer = null;
-            lock (userToken.SendBuffer)
-            {
-                buffer = userToken.SendBuffer.ToArray();
-                userToken.Clear(userToken.SendBuffer);
-            }
-
-            userToken.SAEA_Send.SetBuffer(buffer, 0, buffer.Length);
-            Socket s = userToken.ConnectSocket;
-            SocketAsyncEventArgs e = userToken.SAEA_Send;
-
-            if (!s.SendAsync(e))//投递发送请求，这个函数有可能同步发送出去，这时返回false，并且不会引发SocketAsyncEventArgs.Completed事件  
-            {
-                // 同步发送时处理发送完成事件  
-                ProcessSend(userToken);
-            }
+            Send(userToken, data);
         }
+
+
+     
 
         /// <summary>
         /// 异步发送操作完成后调用该方法
         /// </summary>
-        private void ProcessSend(AsyncUserToken userToken)
+        private void ProcessSend(MySocketEventArgs e)
         {
-            SocketAsyncEventArgs e = userToken.SAEA_Send;
-            //TODO  
+            //SocketAsyncEventArgs e = userToken.SAEA_Send;
             if (e.SocketError == SocketError.Success)
             {
-                userToken.isSending = false;
-                if (userToken.SendBuffer.Count > 0)
-                {
-                    Send(userToken);
-                }
-                Log4Debug("发送成功。");
-                //TODO
+                e.IsUsing = false;
             }
             else
             {
-                Log4Debug("发送回调：" + e.SocketError);
+                Log4Debug("发送未成功，回调：" + e.SocketError);
+            }
+        }
+        public void Send(AsyncUserToken userToken, byte[] buffer)
+        {
+            //string sClientIP = ((IPEndPoint)userToken.ConnectSocket.RemoteEndPoint).ToString();
+            //string info = "";
+            //for (int i = 0; i < buffer.Length; i++)
+            //{
+            //    info += buffer[i] + ",";
+            //}
+            //Log4Debug("From the " + sClientIP + " to send " + buffer.Length + " bytes of data：" + info);
+
+            //查找有没有空闲的发送MySocketEventArgs,有就直接拿来用,没有就创建新的.So easy!  
+            MySocketEventArgs sendArgs = null;
+            lock (listArgs)
+            {
+                sendArgs = listArgs.Find(a => a.IsUsing == false);
+                if (sendArgs == null)
+                {
+                    sendArgs = initSendArgs();
+                }
+                sendArgs.IsUsing = true;
+            }
+
+            Log4Debug("发送所用的套接字编号：" + sendArgs.ArgsTag);
+            //lock (sendArgs) //要锁定,不锁定让别的线程抢走了就不妙了.  
+            {
+                sendArgs.SetBuffer(buffer, 0, buffer.Length);
+            }
+            Socket s = userToken.ConnectSocket;
+            if (!s.SendAsync(sendArgs))//投递发送请求，这个函数有可能同步发送出去，这时返回false，并且不会引发SocketAsyncEventArgs.Completed事件  
+            {
+                // 同步发送时处理发送完成事件  
+                ProcessSend(sendArgs);
             }
         }
 
-        public void SendMessageToUser(string userID, byte[] message, byte xieyiFirst, byte xieyiSecond)
-        {
-            AsyncUserToken userToken = GetTokenByMemberID(userID);
-            if (userToken != null)
-            {
-                //  创建一个发送缓冲区。   
-                MessageXieYi msgXY = new MessageXieYi(xieyiFirst, xieyiSecond, message);
-                //Log4Debug("给 ID:" + userID + "/发送消息协议号：" + (MessageConvention)xieyiFirst + "/大小：" + message.Length);
-                SaveSendMessage(userToken, msgXY.ToBytes());
-            }
-        }
         /// <summary>
         /// 获取指定用户
         /// </summary>
@@ -392,19 +441,23 @@ namespace CsharpIOCP
                 if (userToken.ConnectSocket == null)
                     return;
 
-                ServerDataManager.instance.SetOffLineByState(userToken);
+                //ServerDataManager.instance.SetOffLineByState(userToken);
                 Log4Debug(String.Format("客户 {0} 清理链接!", userToken.ConnectSocket.RemoteEndPoint.ToString()));
                 //
                 userToken.ConnectSocket.Shutdown(SocketShutdown.Both);
+                userToken.ConnectSocket.Close();
                 Log4Debug("Free Client total：" + userTokenPool.Count());
             }
             catch
             {
 
             }
-            userToken.ConnectSocket = null; //释放引用，并清理缓存，包括释放协议对象等资源
-            userToken.userInfo = null;
-            userTokenPool.Push(userToken);
+            finally
+            {
+                //userTokenPool.RemoveUsed(userToken);//清除在线
+                userToken.Init();//清除该变量
+                userTokenPool.Push(userToken);//复存该变量
+            }
         }
 
         /// <summary>
@@ -430,7 +483,7 @@ namespace CsharpIOCP
 
         public void Log4Debug(string msg)
         {
-            LogManager.WriteLog(this.GetType().Name + ":" + msg);
+            LogManager.instance.WriteLog(this.GetType().Name + ":" + msg);
         }
 
     }

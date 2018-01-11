@@ -1,26 +1,71 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 
 public class LogManager
 {
+    public static LogManager instance;
     public static string logPath = @"..\..\Log\";
 
-    public static void WriteLog(string LogText, bool isCreate = false)
+    private bool isWriting;
+    private List<string> waitToWrite;
+
+    public static void Init()
     {
-        try
+        if (instance == null)
         {
-            Console.WriteLine(LogText);
-            string strLogFilePath = logPath + DateTime.Now.ToString("yyyy-MM-dd") + ".txt";
-            StreamWriter logWriter;
-            logWriter = File.AppendText(strLogFilePath);
-            logWriter.Write(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " : ");
-            logWriter.WriteLine(LogText);
-            logWriter.Close();
+            instance = new LogManager();
         }
-        catch (Exception e)
+    }
+    public LogManager()
+    {
+        DeleteFiles();
+        isWriting = false;
+        waitToWrite = new List<string>();
+    }
+
+
+
+    public void WriteLog(string LogText)
+    {
+        Console.WriteLine(LogText);
+        lock (waitToWrite)
         {
-            Console.WriteLine("///////////////////////" + LogText);
+            waitToWrite.Add(LogText);
         }
+        if (isWriting)
+        {
+            return;
+        }
+        isWriting = true;
+
+        while (waitToWrite.Count > 0)
+        {
+            string[] copy = null;
+            lock (waitToWrite)
+            {
+                copy = waitToWrite.ToArray();
+                waitToWrite.Clear();
+            }
+            for (int i = 0; i < copy.Length; i++)
+            {
+                string info = copy[i];
+                try
+                {
+                    string strLogFilePath = logPath + DateTime.Now.ToString("yyyy-MM-dd") + ".txt";
+                    StreamWriter logWriter;
+                    logWriter = File.AppendText(strLogFilePath);
+                    logWriter.Write(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " : ");
+                    logWriter.WriteLine(info);
+                    logWriter.Close();
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine("///////////////////////" + LogText);
+                }
+            }
+        }
+        isWriting = false;
     }
 
 
