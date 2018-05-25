@@ -115,7 +115,7 @@ namespace SocketClient
             }
             else
             {
-                //Debug.LogError("Socket连接失败:" + e.SocketError);
+                Log4Debug("Socket连接失败:" + e.SocketError);
             }
         }
 
@@ -262,6 +262,7 @@ namespace SocketClient
         {
             //查找有没有空闲的发送MySocketEventArgs,有就直接拿来用,没有就创建新的.So easy!  
             MySocketEventArgs sendArgs = null;
+
             lock (listArgs)
             {
                 sendArgs = listArgs.Find(a => a.IsUsing == false);
@@ -272,7 +273,7 @@ namespace SocketClient
                 sendArgs.IsUsing = true;
             }
 
-            Log4Debug("发送所用的套接字编号：" + sendArgs.ArgsTag);
+            //Log4Debug("发送所用的套接字编号：" + sendArgs.ArgsTag);
             //lock (sendArgs) //要锁定,不锁定让别的线程抢走了就不妙了.  
             {
                 sendArgs.SetBuffer(buffer, 0, buffer.Length);
@@ -321,19 +322,14 @@ namespace SocketClient
                 {
                     byte[] copy = new byte[e.BytesTransferred];
                     Array.Copy(e.Buffer, e.Offset, copy, 0, e.BytesTransferred);
-                    //
-                    lock (userToken.ReceiveBuffer)
-                    {
-                        userToken.ReceiveBuffer.AddRange(copy);
-                    }
+
                     if (!userToken.ConnectSocket.ReceiveAsync(e))
                         ProcessReceive(userToken);
 
-                    if (!userToken.isDealReceive)
-                    {
-                        userToken.isDealReceive = true;
-                        Handle(userToken);
-                    }
+                    ConnCache connCache = new ConnCache(copy, userToken);
+                    //ConnCache connCache = new ConnCache(e.Buffer, userToken);
+                    //处理线程
+                    ThreadPool.QueueUserWorkItem(new WaitCallback(AnalyzeThrd), connCache);
                 }
                 //catch (Exception error)
                 //{
@@ -345,71 +341,64 @@ namespace SocketClient
                 //CloseClientSocket(userToken);
             }
         }
-        private void Handle(AsyncUserToken userToken)
+
+        /// <summary>
+        /// 线程处理接收事件
+        /// </summary>
+        /// <param name="state"></param>
+        private void AnalyzeThrd(object state)
         {
-            while (userToken.ReceiveBuffer.Count > 0)
+            ConnCache connCache = (ConnCache)state;
+            AsyncUserToken userToken = connCache.UserToken;
+            lock (userToken.AnalyzeLock)
             {
-                byte[] rece = null;
                 lock (userToken.ReceiveBuffer)
                 {
-                    rece = userToken.ReceiveBuffer.ToArray();
-                    userToken.ReceiveBuffer.Clear();
+                    userToken.ReceiveBuffer.AddRange(connCache.RecvBuffer);
                 }
-                userToken.DealBuffer.AddRange(rece);
-                //
-                while (userToken.DealBuffer.Count > 0)
-                {
-                    if (userToken.DealBuffer.Count < sizeof(int))
-                    {
-                        break;
-                    }
-                    byte[] buffer = null;
-
-                    byte[] lengthB = new byte[sizeof(int)];
-                    lengthB = userToken.DealBuffer.Take(sizeof(int)).ToArray();
-                    int length = BitConverter.ToInt32(lengthB, 0);
-                    if (userToken.DealBuffer.Count < length + sizeof(int))
-                    {
-                        //Log4Debug("还未收齐，继续接收");
-                        break;
-                    }
-                    else
-                    {
-                        userToken.DealBuffer.RemoveRange(0, sizeof(int));
-                        buffer = userToken.DealBuffer.Take(length).ToArray();
-                        userToken.DealBuffer.RemoveRange(0, length);
-                    }
-
-                    string debug = "Receve:";
-                    for (int i = 0; i < buffer.Length; i++)
-                    {
-                        debug += buffer[i] + ",";
-                    }
-                    Console.WriteLine(debug);
-
-                    //while (buffer.Length > 0)
-                    //{
-                    //    MessageXieYi xieyi = MessageXieYi.FromBytes(buffer);
-                    //    if (xieyi != null)
-                    //    {
-                    //        int messageLength = xieyi.MessageContentLength + MessageXieYi.XieYiLength + 1 + 1;
-                    //        buffer = buffer.Skip(messageLength).ToArray();
-                    //        DealReceive(xieyi, userToken);
-                    //    }
-                    //    else
-                    //    {
-                    //        string info = "数据应该直接处理完，不会到这:";
-                    //        for (int i = 0; i < buffer.Length; i++)
-                    //        {
-                    //            info += buffer[i] + ",";
-                    //        }
-                    //        Log4Debug(info);
-                    //        break;
-                    //    }
-                    //}
-                }
+                Handle(userToken);
             }
-            userToken.isDealReceive = false;
+        }
+        private void Handle(AsyncUserToken userToken)
+        {
+            do
+            {
+                byte[] lenBytes = userToken.ReceiveBuffer.GetRange(0, sizeof(int)).ToArray();
+                int packageLen = BitConverter.ToInt32(lenBytes, 0);
+                if (packageLen <= userToken.ReceiveBuffer.Count - sizeof(int))
+                {
+                    //包够长时,则提取出来,交给后面的程序去处理  
+                    byte[] buffer = userToken.ReceiveBuffer.GetRange(sizeof(int), packageLen).ToArray();
+                    //从数据池中移除这组数据,为什么要lock,你懂的  
+                    lock (userToken.ReceiveBuffer)
+                    {
+                        userToken.ReceiveBuffer.RemoveRange(0, packageLen + sizeof(int));
+                    }
+
+                    while (buffer.Length > 0)
+                    {
+                        if (buffer[0] != MessageXieYi.markStart)
+                        {
+                            break;
+                        }
+                        MessageXieYi xieyi = MessageXieYi.FromBytes(buffer);
+                        if (xieyi == null)
+                        {
+                            Log4Debug("奇怪为什么协议为空");
+                            break;
+                        }
+                        int messageLength = xieyi.MessageContentLength + MessageXieYi.XieYiLength + 1 + 1;
+                        buffer = buffer.Skip(messageLength).ToArray();
+                        //将数据包交给前台去处理
+                        //DealXieYi(xieyi, userToken);
+                        //Log4Debug(xieyi.XieYiFirstFlag + ".");
+                    }
+                }
+                else
+                {   //长度不够,还得继续接收,需要跳出循环  
+                    break;
+                }
+            } while (userToken.ReceiveBuffer.Count > sizeof(int));
         }
 
         #endregion
@@ -421,11 +410,15 @@ namespace SocketClient
         }
         void WriteY()
         {
-            for (int i = 100; i < 110; i++)
+            for (int i = 0; i < 100; i++)
             {
                 byte j = (byte)i;
-                SendSave(new byte[5] { j, j, j, j, j });
+                MessageXieYi xieyi = new MessageXieYi(1, 0, new byte[5] { j, j, j, j, j });
+                byte[] send = xieyi.ToBytes();
+                byte[] buffer = AsyncUserToken.GetSendBytes(send);
+                SendSave(buffer);
             }
+            Console.WriteLine("本次循环完成。");
         }
 
         public void DebugReceive()

@@ -41,8 +41,8 @@ namespace SocketClient
         //}
         static void Main(string[] args)
         {
-            IOCPClient client = new IOCPClient(IP, portNo);
-
+            //IOCPClient client = new IOCPClient(IP, portNo);
+            IOCPClient client = null;
             while (true)
             {
                 Console.Write("send>");
@@ -50,22 +50,21 @@ namespace SocketClient
 
                 if (!string.IsNullOrEmpty(msg))
                 {
-                    if (msg == "test")
-                    {
-                        client.TestThread();
-                        for (int t = 0; t < 100; t++)
-                        {
-                            for (int i = 1; i < 255; i++)
-                            {
-                                byte[] b = new byte[1024];
-                                b[0] = (byte)i;
-                                client.SendSave(b);
-                            }
-                        }
-                    }
-                    else if (msg == "debug")
+                    if (msg == "debug")
                     {
                         client.DebugReceive();
+                    }
+                    else if (msg == "c")
+                    {
+                        TestClient();
+                    }
+                    else if (msg == "s")
+                    {
+                        TestSend();
+                    }
+                    else if (msg == "n")
+                    {
+                        client = new IOCPClient(IP, portNo);
                     }
                     else
                     {
@@ -74,7 +73,26 @@ namespace SocketClient
                 }
             }
         }
-        
+        static List<IOCPClient> all = new List<IOCPClient>();
+        static void TestClient()
+        {
+            for (int i = 0; i < 299; i++)
+            {
+                IOCPClient client = new IOCPClient(IP, portNo);
+                all.Add(client);
+            }
+            Console.WriteLine("所有连接完成。");
+        }
+
+        static void TestSend()
+        {
+            foreach (IOCPClient item in all)
+            {
+                item.TestThread();
+            }
+            Console.WriteLine("所有发送完成。");
+        }
+
 
     }
 }
